@@ -13,7 +13,7 @@ pipeline {
     stages {
         stage('Git Checkout') {
             steps {
-               git branch: 'main', credentialsId: 'git-cred', url: 'https://github.com/abrahimcse/FullStack-Blogging-App.git'
+               git branch: 'main', credentialsId: 'git-cred', url: 'https://github.com/faizanmansuri77/Blogging-Application.git'
             }
         }
         stage('Compile') {
@@ -63,29 +63,29 @@ pipeline {
         stage('Build & Tag Docker Image') {
             steps {
                script {
-                   withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
-                            sh "docker build -t abrahimcse/bloggingapp:latest ."
+                   withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
+                            sh "docker build -t orionpax77/bloggingapp:latest ."
                     }
                }
             }
         }
         stage('Docker Image Scan') {
             steps {
-                sh "trivy image --format table -o trivy-image-report.html abrahimcse/bloggingapp:latest "
+                sh "trivy image --format table -o trivy-image-report.html orionpax77/bloggingapp:latest "
             }
         }
         stage('Push Docker Image') {
             steps {
                script {
-                   withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
-                            sh "docker push abrahimcse/bloggingapp:latest"
+                   withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
+                            sh "docker push orionpax77/bloggingapp:latest"
                     }
                }
             }
         }
         stage('Deploy To Kubernetes') {
             steps {
-                withKubeConfig(caCertificate: '', clusterName: 'abrahimcse-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://< >.ap-southes-1.eks.amazonaws.com') {
+                withKubeConfig(caCertificate: '', clusterName: 'orionpax77-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://< >.ap-southes-1.eks.amazonaws.com') {
                       sh "kubectl apply -f deployment-service.yaml"
                 }
             }
@@ -93,7 +93,7 @@ pipeline {
         
         stage('Verify the Deployment') {
             steps {
-                withKubeConfig(caCertificate: '', clusterName: 'abrahimcse-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://< >.ap-southes-1.eks.amazonaws.com') {
+                withKubeConfig(caCertificate: '', clusterName: 'orionpax77-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://< >.ap-southes-1.eks.amazonaws.com') {
                         sh "kubectl get pods -n webapps"
                         sh "kubectl get svc -n webapps"
                 }
