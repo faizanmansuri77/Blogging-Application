@@ -1,152 +1,191 @@
 pipeline {
     agent any
-    
+
     tools {
         jdk 'jdk17'
         maven 'maven3'
     }
-    
     environment {
-        SCANNER_HOME = tool 'sonar-scanner'
+        SCANNER_HOME = tool('sonar-scanner')
     }
 
     stages {
+
         stage('Git Checkout') {
             steps {
-               git branch: 'main', credentialsId: 'git-cred', url: 'https://github.com/faizanmansuri77/Blogging-Application.git'
+                git branch: 'main',
+                url: 'https://github.com/faizanmansuri77/Blogging-Application.git'
             }
         }
-        stage('Terraform Init'){
-    steps{
-      dir('Eks-terraform'){
-      sh 'terraform init'
-      }
-    }
- }
 
- stage('Terraform Apply/Destroy'){
-     steps{
-       dir('Eks-terraform'){
-       sh 'terraform ${action} --auto-approve'
-       }
-     }
- }
         stage('Compile') {
             steps {
-                sh "mvn compile"
+                sh 'mvn compile'
             }
         }
-        
+
         stage('Test') {
             steps {
-                sh "mvn test"
+                sh 'mvn test'
             }
         }
-        
+
         stage('File System Scan') {
             steps {
-                sh "trivy fs --format table -o trivy-fs-report.html ."
+                sh 'trivy fs . > trivy-fs-report.html'
             }
         }
-        stage('SonarQube Analsyis') {
+
+        stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('sonar') {
-                    sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=bloggingapp -Dsonar.projectKey=bloggingapp \
-                            -Dsonar.java.binaries=. '''
+                    sh """
+                    ${SCANNER_HOME}/bin/sonar-scanner \
+                    -Dsonar.projectName=bloggingapp \
+                    -Dsonar.projectKey=bloggingapp \
+                    -Dsonar.java.binaries=.
+                    """
                 }
             }
         }
+
         stage('Quality Gate') {
             steps {
                 script {
-                  waitForQualityGate abortPipeline: false, credentialsId: 'sonar-token' 
+                    waitForQualityGate(
+                        abortPipeline: false,
+                        credentialsId: 'sonar-token'
+                    )
                 }
             }
         }
+
         stage('Build') {
             steps {
-                sh "mvn package"
+                sh 'mvn package'
             }
         }
+
         stage('Publish To Nexus') {
             steps {
-            withMaven(globalMavenSettingsConfig: 'global-settings', jdk: 'jdk17', maven: 'maven3', mavenSettingsConfig: '', traceability: true) {
-                    sh "mvn deploy"
+                withMaven(
+                    globalMavenSettingsConfig: 'global-settings',
+                    jdk: 'jdk17',
+                    maven: 'maven3',
+                    traceability: true
+                ) {
+                    sh 'mvn deploy'
                 }
             }
         }
-        stage('Build & Tag Docker Image') {
+
+        stage('Build Docker Image') {
             steps {
-               script {
-                   withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
-                            sh "docker build -t orionpax77/bloggingapp:latest ."
+                script {
+                    withDockerRegistry(
+                        credentialsId: 'docker',
+                        toolName: 'docker'
+                    ) {
+                        sh 'docker build -t orionpax77/bloggingapp:latest .'
                     }
-               }
+                }
             }
         }
+
         stage('Docker Image Scan') {
             steps {
-                sh "trivy image --format table -o trivy-image-report.html orionpax77/bloggingapp:latest "
+                sh 'trivy image orionpax77/bloggingapp:latest > trivy-image-report.html'
             }
         }
+
         stage('Push Docker Image') {
             steps {
-               script {
-                   withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
-                            sh "docker push orionpax77/bloggingapp:latest"
+                script {
+                    withDockerRegistry(
+                        credentialsId: 'docker',
+                        toolName: 'docker'
+                    ) {
+                        sh 'docker push orionpax77/bloggingapp:latest'
                     }
-               }
+                }
             }
         }
+
         stage('Deploy To Kubernetes') {
             steps {
-                withKubeConfig(caCertificate: '', clusterName: 'orionpax77-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://< >.ap-southes-1.eks.amazonaws.com') {
-                      sh "kubectl apply -f deployment-service.yaml"
+                withKubeConfig(
+                    credentialsId: 'k8-cred',
+                    clusterName: 'orionpax77-cluster',
+                    namespace: 'webapps',
+                    restrictKubeConfigAccess: false,
+                    serverUrl: 'https://YOUR-EKS-ENDPOINT.ap-south-1.eks.amazonaws.com'
+                ) {
+                    sh 'kubectl apply -f deployment-service.yaml'
                 }
             }
         }
-        
-        stage('Verify the Deployment') {
+
+        stage('Verify Deployment') {
             steps {
-                withKubeConfig(caCertificate: '', clusterName: 'orionpax77-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://< >.ap-southes-1.eks.amazonaws.com') {
-                        sh "kubectl get pods -n webapps"
-                        sh "kubectl get svc -n webapps"
+                withKubeConfig(
+                    credentialsId: 'k8-cred',
+                    clusterName: 'orionpax77-cluster',
+                    namespace: 'webapps',
+                    restrictKubeConfigAccess: false,
+                    serverUrl: 'https://YOUR-EKS-ENDPOINT.ap-south-1.eks.amazonaws.com'
+                ) {
+                    sh 'kubectl get pods -n webapps'
+                    sh 'kubectl get svc -n webapps'
                 }
             }
         }
+
+    }
 
     post {
-    always {
-        script {
-            def jobName = env.JOB_NAME
-            def buildNumber = env.BUILD_NUMBER
-            def pipelineStatus = currentBuild.result ?: 'UNKNOWN'
-            def bannerColor = pipelineStatus.toUpperCase() == 'SUCCESS' ? 'green' : 'red'
+        always {
+            script {
 
-            def body = """
+                def jobName = env.JOB_NAME
+                def buildNumber = env.BUILD_NUMBER
+                def pipelineStatus = currentBuild.result ?: 'UNKNOWN'
+
+                def bannerColor = pipelineStatus == 'SUCCESS' ? 'green' : 'red'
+
+                def body = """
                 <html>
                 <body>
-                <div style="border: 4px solid ${bannerColor}; padding: 10px;">
-                <h2>${jobName} - Build ${buildNumber}</h2>
-                <div style="background-color: ${bannerColor}; padding: 10px;">
-                <h3 style="color: white;">Pipeline Status: ${pipelineStatus.toUpperCase()}</h3>
-                </div>
-                <p>Check the <a href="${BUILD_URL}">console output</a>.</p>
-                </div>
+                    <div style="border:4px solid ${bannerColor};padding:10px">
+                        <h2>${jobName} - Build ${buildNumber}</h2>
+
+                        <div style="background-color:${bannerColor};padding:10px">
+                            <h3 style="color:white">
+                            Pipeline Status: ${pipelineStatus}
+                            </h3>
+                        </div>
+
+                        <p>
+                        Check Console:
+                        <a href="${env.BUILD_URL}">
+                        Build Logs
+                        </a>
+                        </p>
+
+                    </div>
                 </body>
                 </html>
-            """
+                """
 
-            emailext (
-                subject: "${jobName} - Build ${buildNumber} - ${pipelineStatus.toUpperCase()}",
-                body: body,
-                to: 'abrahim.ctech@gmail.com',
-                from: 'jenkins@example.com',
-                replyTo: 'jenkins@example.com',
-                mimeType: 'text/html',
-                attachmentsPattern: 'trivy-image-report.html'
-            )
+                emailext(
+                    subject: "${jobName} - Build ${buildNumber} - ${pipelineStatus}",
+                    body: body,
+                    to: 'abrahim.ctech@gmail.com',
+                    from: 'jenkins@example.com',
+                    replyTo: 'jenkins@example.com',
+                    mimeType: 'text/html',
+                    attachmentsPattern: 'trivy-*.html'
+                )
+            }
         }
-      }       
-    }   
+    }
 }
