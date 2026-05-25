@@ -16,6 +16,21 @@ pipeline {
                git branch: 'main', credentialsId: 'git-cred', url: 'https://github.com/faizanmansuri77/Blogging-Application.git'
             }
         }
+        stage('Terraform Init'){
+    steps{
+      dir('Eks-terraform'){
+      sh 'terraform init'
+      }
+    }
+ }
+
+ stage('Terraform Apply/Destroy'){
+     steps{
+       dir('Eks-terraform'){
+       sh 'terraform ${action} --auto-approve'
+       }
+     }
+ }
         stage('Compile') {
             steps {
                 sh "mvn compile"
